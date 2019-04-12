@@ -1,0 +1,3 @@
+rootProject.name = 'RNSampleCryptoWallet'
+
+include ':app'
