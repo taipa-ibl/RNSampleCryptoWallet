@@ -6,27 +6,38 @@
  * @flow
  */
 
-import React, {Component} from 'react';
-import {Platform, StyleSheet, Text, View} from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Platform, StyleSheet, Text, View, Button } from 'react-native';
+import bip39 from 'bip39';
+import crypto from 'crypto';
+import Bitcoin from './src/libs/bitcoin';
 
-const instructions = Platform.select({
-  ios: 'Press Cmd+R to reload,\n' + 'Cmd+D or shake for dev menu',
-  android:
-    'Double tap R on your keyboard to reload,\n' +
-    'Shake or press menu button for dev menu',
-});
+export default function App(props) {
+  const [seed, setSeed] = useState('');
+  const [btc, setBtc] = useState('');
+  let bitcoin = null;
 
-type Props = {};
-export default class App extends Component<Props> {
-  render() {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.welcome}>Welcome to React Native!</Text>
-        <Text style={styles.instructions}>To get started, edit App.js</Text>
-        <Text style={styles.instructions}>{instructions}</Text>
-      </View>
-    );
-  }
+  const generateSeed = () => {
+    const mnemonic = bip39.generateMnemonic();
+    // bip39.validateMnemonic('timber predict session remind glory drum great meat spend sleep ostrich order')
+    setSeed(mnemonic);
+
+    const result = bitcoin.createWalletFromSeed({ mnemonic });
+    console.warn(result)
+  };
+
+  useEffect(() => {
+    bitcoin = new Bitcoin({ isTestnet: false });
+  }, []);
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.welcome}>Welcome to React Native!</Text>
+      <Text style={styles.instructions}>{seed}</Text>
+
+      <Button onPress={generateSeed} title="Gen Seed" color="#841584" />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -34,16 +45,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5FCFF',
+    backgroundColor: '#F5FCFF'
   },
   welcome: {
     fontSize: 20,
     textAlign: 'center',
-    margin: 10,
+    margin: 10
   },
   instructions: {
     textAlign: 'center',
     color: '#333333',
-    marginBottom: 5,
-  },
+    marginBottom: 5
+  }
 });

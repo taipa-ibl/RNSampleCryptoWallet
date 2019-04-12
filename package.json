@@ -7,8 +7,14 @@
     "test": "jest"
   },
   "dependencies": {
+    "bip32": "^1.0.4",
+    "bip39": "2.6.0",
+    "bitcoinjs-lib": "4.0.5",
+    "bitcoinjs-message": "^2.0.0",
+    "node-libs-browser": "^2.2.0",
     "react": "16.8.3",
-    "react-native": "0.59.4"
+    "react-native": "0.59.4",
+    "react-native-randombytes": "^3.5.2"
   },
   "devDependencies": {
     "@babel/core": "^7.4.3",
