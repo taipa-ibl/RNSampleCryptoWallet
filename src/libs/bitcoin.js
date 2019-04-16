@@ -1,25 +1,23 @@
 import bitcoinjs from 'bitcoinjs-lib';
 import bip39 from 'bip39';
 import bip32 from 'bip32';
+import bitcoinMessage from 'bitcoinjs-message';
+import coinSelect from 'coinselect';
+import _ from 'lodash';
 
 export default class Bitcoin {
-  isTestnet = true;
-  network = bitcoinjs.networks.testnet;
-  DEFAULT_FEE_PER_BYTE = 80; // Satoshi per byte
-
   constructor({ isTestnet }) {
     this.isTestnet = isTestnet;
-    this.hdPathString = this.isTestNet ? "m/44'/1'/0'/0" : "m/44'/0'/0'/0";
-    this.network = this.isTestNet
+    this.hdPathString = isTestnet ? "m/44'/1'/0'/0" : "m/44'/0'/0'/0";
+    this.network = isTestnet
       ? bitcoinjs.networks.testnet
       : bitcoinjs.networks.bitcoin;
   }
 
   createWalletFromSeed({ mnemonic, child = 0 }) {
     const seed = bip39.mnemonicToSeed(mnemonic);
-    const root = bip32.fromSeed(seed);
+    const root = bip32.fromSeed(seed, this.network);
     const node = root.derivePath(this.hdPathString).derive(child);
-    // const _network = network
     const { address } = bitcoinjs.payments.p2pkh({
       pubkey: node.publicKey,
       network: this.network
@@ -32,8 +30,8 @@ export default class Bitcoin {
     };
   }
 
-  createWalletFromPrivateKey(privateKey) {
-    const keyPair = bitcoinjs.ECPair.fromWIF(privateKey);
+  createWalletFromPrivateKey({ privateKey }) {
+    const keyPair = bitcoinjs.ECPair.fromWIF(privateKey, this.network);
     const { address } = bitcoinjs.payments.p2pkh({ pubkey: keyPair.publicKey });
     return {
       address: address,
@@ -42,7 +40,7 @@ export default class Bitcoin {
     };
   }
 
-  validateAddress(address) {
+  validateAddress({ address }) {
     try {
       bitcoinjs.address.toOutputScript(address, this.network);
       return true;
@@ -51,119 +49,83 @@ export default class Bitcoin {
     }
   }
 
-  validatePrivateKey(privateKey) {
+  validatePrivateKey({ privateKey }) {
     return true;
   }
 
-  estimateTransactionFee({
-    amount,
-    amountSatoshi,
-    listUnspent,
-    feePerByte = this.DEFAULT_FEE_PER_BYTE,
-    isSendMax = false,
-    address = ''
-  }) {
+  estimateTransactionFee({ txParams }) {
+    // txParams = {
+    //   amount,
+    //   amountSatoshi,
+    //   listUnspent,
+    //   feePerByte = this.DEFAULT_FEE_PER_BYTE,
+    //   isSendMax = false,
+    //   address = ''
+    // }
     return 100; // fee value in satoshi
   }
 
-  createRawTx(params) {
-    // let param = {
+  createRawTx({ txParams }) {
+    // let txParams = {
     //   from: '',
     //   to: '',
-    //   amount: '', // value in BTC
-    //   utxos: [], // upspent output lists
+    //   amount: '', // value in satoshi
+    //   utxos: [{amount, tx_id, vout}], // upspent output lists, amount in satoshi
     //   isSendMax: false, //
-    //   feeRate: 100, // satoshi per byte
+    //   feeRate: 150, // satoshi per byte
     //   privateKey: ''
     // }
+    const targets = [{ address: txParams.to, value: txParams.amount }];
+    const utxos = _.map(txParams.utxos, item => {
+      return {
+        txId: item.tx_id,
+        value: item.amount,
+        vout: item.vout
+      };
+    });
+
+    const feeRate = txParams.feeRate ? txParams.feeRate : 150;
+    let { inputs, outputs, fee } = coinSelect(utxos, targets, feeRate);
+
+    // .inputs and .outputs will be undefined if no solution was found
+    if (!inputs || !outputs) return;
+
+    const txb = new bitcoinjs.TransactionBuilder(this.network);
+    txb.setVersion(1);
+
+    inputs.forEach(input => txb.addInput(input.txId, input.vout));
+
+    outputs.forEach(output => {
+      // watch out, outputs may have been added that you need to provide
+      // an output address/script for
+      if (!output.address) {
+        output.address = txParams.from;
+      }
+
+      txb.addOutput(output.address, output.value);
+    });
+
+    const keyPair = bitcoinjs.ECPair.fromWIF(txParams.privateKey, this.network);
+
+    for (i = 0; i < inputs.length; i++) {
+      txb.sign(i, keyPair);
+    }
+
     return {
-      txHex: '',
-      fee: 100
+      txHex: txb.build().toHex(),
+      fee
     };
   }
 
-  signMessage(message, privateKey) {
-    let signedMsg = '';
-    return signedMsg;
+  signMessage({ message, privateKey }) {
+    const keyPair = bitcoinjs.ECPair.fromWIF(privateKey, this.network);
+    const priKey = keyPair.privateKey;
+    const signature = bitcoinMessage.sign(message, priKey, keyPair.compressed);
+
+    return signature.toString('base64');
   }
 
-  verifyMessage(message, address, signature) {
-    return true;
+  verifyMessage({ message, address, signature }) {
+    return bitcoinMessage.verify(message, address, signature);
   }
 }
-
-// import BitcoinCore from './BitcoinCore'
-// import { DEFAULT_FEE_PER_BYTE } from './utils/common'
-// const bitcoinjs = require('bitcoinjs-lib')
-
-// const Bitcoin = {
-//   testnet: false,
-//   hdPathString: "m/44'/0'/0'/0",
-//   hdPathStringTest: "m/44'/1'/0'/0",
-//   network: bitcoinjs.networks.bitcoin,
-//   networkTest: bitcoinjs.networks.testnet,
-//   createWalletFromSeed: function ({ mnemonic, child = 0 }) {
-//     return BitcoinCore.createWalletFromSeed({
-//       mnemonic,
-//       child,
-//       network: this.testnet ? this.networkTest : this.network,
-//       hdPathString: this.testnet ? this.hdPathStringTest : this.hdPathString
-//     })
-//   },
-//   createWalletFromPrivateKey: function (privateKey) {
-//     return BitcoinCore.createWalletFromPrivateKey({
-//       privateKey,
-//       network: this.testnet ? this.networkTest : this.network
-//     })
-//   },
-//   validateAddress: function (address) {
-//     return BitcoinCore.validateAddress({
-//       address,
-//       testnet: this.testnet
-//     })
-//   },
-//   validatePrivateKey: function (privateKey) {
-//     const network = this.testnet ? this.networkTest : this.network
-//     try {
-//       const keyPair = bitcoinjs.ECPair.fromWIF(privateKey, network)
-//       const address = keyPair.getAddress()
-//       return this.validateAddress(address)
-//     } catch (e) {
-//       return false
-//     }
-//   },
-//   estimateTransactionFee: function ({
-//     amount,
-//     listUnspent,
-//     feePerByte = DEFAULT_FEE_PER_BYTE,
-//     isSendMax = false,
-//     address = ''
-//   }) {
-//     return BitcoinCore.estimateTransactionFee({
-//       amount,
-//       listUnspent,
-//       feePerByte,
-//       isSendMax,
-//       address
-//     })
-//   },
-//   createRawTx: function (params) {
-//     return BitcoinCore.createRawTx(params, this.testnet ? this.networkTest : this.network)
-//   },
-//   convertToSatoshi: function (amount) {
-//     return BitcoinCore.convertToSatoshi(amount)
-//   },
-//   convertToBitcoin: function (amount) {
-//     return BitcoinCore.convertToBitcoin(amount)
-//   },
-//   signMessage: function (message, privateKey) {
-//     const network = this.testnet ? this.networkTest : this.network
-//     return BitcoinCore.signMessage({message, privateKey, network})
-//   },
-//   verifyMessage: function (message, address, signature) {
-//     const network = this.testnet ? this.networkTest : this.network
-//     return BitcoinCore.verifyMessage({message, address, signature, network})
-//   }
-// }
-
-// export default Bitcoin
